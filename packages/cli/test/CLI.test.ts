@@ -843,6 +843,56 @@ describe('CLI', () => {
     expect(csv).toEqual(csvFixtures.unwindAndFlatten);
   });
 
+  it('should flatten the same logical record identically regardless of key insertion order', async () => {
+    const opts = '--flatten-objects --flatten-arrays';
+
+    const { stdout: flatFirstCsv } = await execAsync(
+      `${cli} -i "${getFixturePath('/json/flattenConflictFlatFirst.json')}" ${opts}`,
+    );
+    const { stdout: nestedFirstCsv } = await execAsync(
+      `${cli} -i "${getFixturePath('/json/flattenConflictNestedFirst.json')}" ${opts}`,
+    );
+
+    expect(flatFirstCsv).toEqual(csvFixtures.flattenedConflictDeterministic);
+    expect(nestedFirstCsv).toEqual(csvFixtures.flattenedConflictDeterministic);
+  });
+
+  it('should support the flatten conflict strategy from the command line', async () => {
+    const opts = '--flatten-objects --flatten-arrays --flatten-on-conflict last';
+
+    const { stdout: csv } = await execAsync(
+      `${cli} -i "${getFixturePath('/json/flattenConflictFlatFirst.json')}" ${opts}`,
+    );
+
+    expect(csv).toEqual(csvFixtures.flattenedConflictLast);
+  });
+
+  it('should support the flatten conflict strategy from a config file', async () => {
+    const opts = `--config "${getFixturePath('/fields/flattenConflictConfig.json')}"`;
+
+    const { stdout: csv } = await execAsync(
+      `${cli} -i "${getFixturePath('/json/flattenConflictFlatFirst.json')}" ${opts}`,
+    );
+
+    expect(csv).toEqual(csvFixtures.flattenedConflictLast);
+  });
+
+  it('should error when flattening finds a key collision and the strategy is "error"', async () => {
+    const opts = '--flatten-objects --flatten-arrays --flatten-on-conflict error';
+
+    try {
+      await execAsync(
+        `${cli} -i "${getFixturePath('/json/flattenConflictFlatFirst.json')}" ${opts}`,
+      );
+
+      expect.fail('Exception expected.');
+    } catch (err: any) {
+      expect(err.stderr).toContain('Flatten conflict:');
+      expect(err.stderr).toContain('"tags.0"');
+      expect(err.stderr).toContain('"user.id"');
+    }
+  });
+
   it('should unwind complex objects using the unwind transform', async () => {
     const opts =
       '--fields carModel,price,extras.items.name,extras.items.items.position,extras.items.items.color,extras.items.color' +

@@ -1,0 +1,6 @@
+{
+  "flattenObjects": true,
+  "flattenArrays": true,
+  "flattenSeparator": ".",
+  "flattenOnConflict": "last"
+}

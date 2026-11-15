@@ -99,6 +99,7 @@ Options:
   --flatten-objects                   Flatten nested objects. Defaults to false. (default: false)
   --flatten-arrays                    Flatten nested arrays. Defaults to false. (default: false)
   --flatten-separator <separator>     Flattened keys separator. Defaults to '.'. (default: ".")
+  --flatten-on-conflict <strategy>    Strategy when two source paths flatten to the same key: 'first', 'last' or 'error'. Defaults to 'first'. (default: "first")
   -h, --help                          output usage information
 ```
 

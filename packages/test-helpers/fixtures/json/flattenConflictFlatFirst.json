@@ -1,0 +1,9 @@
+[
+  {
+    "record": "row-1",
+    "user.id": "flat-user-id",
+    "user": { "id": "nested-user-id" },
+    "tags.0": "flat-tag",
+    "tags": ["nested-tag"]
+  }
+]

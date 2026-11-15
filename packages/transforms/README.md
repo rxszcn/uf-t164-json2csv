@@ -85,6 +85,7 @@ The transform needs to be instantiated and takes an options object as arguments 
 * `objects` [&lt;Boolean&gt;](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean) Flag indicating whether to flatten JSON objects or not. Defaults to `true`.
 * `arrays`[&lt;Boolean&gt;](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean) Flag indicating whether to flatten Arrays or not. Defaults to `false`.
 * `separator` [&lt;String&gt;](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String) Separator to use between the keys of the nested JSON properties being flattened. Defaults to `.`.
+* `onConflict` [&lt;String&gt;](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String) What to do when two different source paths flatten to the same key (for example a literal `user.id` key next to a nested `user: { id }` object). One of `'first'`, `'last'` or `'error'`. Defaults to `'first'`.
 
 ```js
 // Default
@@ -95,7 +96,32 @@ flatten({ separator: '_' });
 
 // Flatten only arrays
 flatten({ objects: false, arrays: true });
+
+// Keep the value of the deepest source path on collisions
+flatten({ onConflict: 'last' });
+
+// Throw instead of silently dropping one of the colliding values
+flatten({ onConflict: 'error' });
 ```
+
+#### Flattened key collisions
+
+Different source paths can flatten to the same key, e.g. `{ 'user.id': 'flat', user: { id: 'nested' } }`
+flattens both values to `user.id`. Instead of letting whichever key happens to be inserted last win,
+the transform resolves collisions using a canonical order derived only from the record's data:
+source paths are compared segment by segment using UTF-16 code unit order, so the result of an
+export never depends on the insertion order of the keys. Keys that do not collide are untouched and
+keep their original order and values.
+
+* `onConflict: 'first'` (default) keeps the value of the source path that comes first in that
+  canonical order. `user: { id }` (path `['user', 'id']`) wins over the literal `'user.id'` key
+  (path `['user.id']`), so nested data takes precedence over a flattened top-level key.
+* `onConflict: 'last'` keeps the value of the source path that comes last, i.e. the literal
+  top-level key wins over the nested one.
+* `onConflict: 'error'` throws an error listing every source path that produced the key.
+
+Colliding columns are appended after the non-colliding ones in canonical path order, so even the
+column layout is independent of the row key order.
 
 ## Custom transforms
 

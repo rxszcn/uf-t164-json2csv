@@ -763,6 +763,195 @@ describe('Parser', () => {
     expect(csv).toBe(csvFixtures.objectWithEmptyFields);
   });
 
+  it('should resolve flattened key collisions independently of the row key order (flat key vs nested object)', () => {
+    // The literal `user.id` key and the nested `user: { id }` object both
+    // flatten to `user.id`. Whichever order the keys are inserted in, the
+    // same source path must win and the exported CSV must be identical.
+    const flatFirst = { 'user.id': 'flat', user: { id: 'nested' }, kept: 1 };
+    const nestedFirst = { kept: 1, user: { id: 'nested' }, 'user.id': 'flat' };
+
+    const parser = new Parser({ transforms: [flatten()] });
+
+    const flatFirstCsv = parser.parse([flatFirst]);
+    const nestedFirstCsv = parser.parse([nestedFirst]);
+
+    expect(flatFirstCsv).toBe(nestedFirstCsv);
+    expect(flatFirstCsv).toBe('"kept","user.id"\n1,"nested"');
+  });
+
+  it('should also produce the same flattened row object for reversed key insertion order', () => {
+    const flatFirst = { 'user.id': 'flat', user: { id: 'nested' }, kept: 1 };
+    const nestedFirst = { kept: 1, user: { id: 'nested' }, 'user.id': 'flat' };
+
+    expect(flatten()(flatFirst)).toEqual(flatten()(nestedFirst));
+    expect(JSON.stringify(flatten()(flatFirst))).toBe(
+      JSON.stringify(flatten()(nestedFirst)),
+    );
+  });
+
+  it('should resolve flattened key collisions independently of the row key order (flat key vs nested array)', () => {
+    const flatFirst = { 'items.0': 'flat', items: ['nested'], kept: 2 };
+    const nestedFirst = { kept: 2, items: ['nested'], 'items.0': 'flat' };
+
+    const parser = new Parser({ transforms: [flatten({ arrays: true })] });
+
+    const flatFirstCsv = parser.parse([flatFirst]);
+    const nestedFirstCsv = parser.parse([nestedFirst]);
+
+    expect(flatFirstCsv).toBe(nestedFirstCsv);
+    expect(flatFirstCsv).toBe('"items.0","kept"\n"nested",2');
+  });
+
+  it('should resolve multiple flattened key collisions deterministically regardless of row key order', () => {
+    const first = {
+      'x.y': 1,
+      x: { y: 2 },
+      'x.y.z': 3,
+      x2: { y: { z: 4 } },
+    };
+    const second = {
+      x2: { y: { z: 4 } },
+      'x.y.z': 3,
+      x: { y: 2 },
+      'x.y': 1,
+    };
+
+    // Fields are pinned so the comparison isolates conflict resolution from
+    // the pre-existing first-seen column order of non-conflicting keys.
+    const opts: ParserOptions = {
+      fields: ['x.y', 'x.y.z', 'x2.y.z'],
+      transforms: [flatten()],
+    };
+
+    expect(new Parser(opts).parse([first])).toBe(
+      new Parser(opts).parse([second]),
+    );
+  });
+
+  it('should emit the same flattened row (values and column order) for any key insertion order once a collision exists', () => {
+    const row = {
+      'user.id': 'flat',
+      user: { id: 'nested', name: 'Jack' },
+      record: 'r1',
+    };
+    const orders = [
+      row,
+      { record: 'r1', user: { name: 'Jack', id: 'nested' }, 'user.id': 'flat' },
+      { user: { id: 'nested', name: 'Jack' }, 'user.id': 'flat', record: 'r1' },
+      { 'user.id': 'flat', record: 'r1', user: { name: 'Jack', id: 'nested' } },
+    ];
+
+    const expected = flatten()(row);
+    expect(Object.keys(expected)).toEqual(['record', 'user.id', 'user.name']);
+
+    for (const ordered of orders) {
+      expect(JSON.stringify(flatten()(ordered))).toBe(
+        JSON.stringify(expected),
+      );
+    }
+  });
+
+  it('should keep the pre-existing first-seen column order when there is no collision', () => {
+    const row = { z: 1, a: { b: 2 }, tail: 'end' };
+
+    expect(Object.keys(flatten()(row) as object)).toEqual(['z', 'a.b', 'tail']);
+  });
+
+  it('should support choosing which source path wins a flattened key collision', () => {
+    const row = { 'user.id': 'flat', user: { id: 'nested' } };
+
+    expect(new Parser({ transforms: [flatten()] }).parse([row])).toBe(
+      '"user.id"\n"nested"',
+    );
+    expect(
+      new Parser({
+        transforms: [flatten({ onConflict: 'first' })],
+      }).parse([row]),
+    ).toBe('"user.id"\n"nested"');
+    expect(
+      new Parser({
+        transforms: [flatten({ onConflict: 'last' })],
+      }).parse([row]),
+    ).toBe('"user.id"\n"flat"');
+  });
+
+  it('should error on flattened key collisions when the onConflict strategy is "error"', () => {
+    const parser = new Parser({
+      transforms: [flatten({ onConflict: 'error' })],
+    });
+
+    expect(() =>
+      parser.parse([{ 'user.id': 'flat', user: { id: 'nested' } }]),
+    ).toThrow(/Flatten conflict: "user\.id"/);
+  });
+
+  it('should reject an invalid onConflict strategy', () => {
+    expect(() => flatten({ onConflict: 'unknown' as any })).toThrow(
+      /Invalid flatten "onConflict" option/,
+    );
+  });
+
+  it('should flatten the same logical record identically for both key insertion orders (flat keys first vs nested keys first)', async () => {
+    const opts: ParserOptions = {
+      transforms: [flatten({ arrays: true, objects: true })],
+    };
+
+    const parser = new Parser(opts);
+    const flatFirstCsv = await parseInput(
+      parser,
+      jsonFixtures.flattenConflictFlatFirst(),
+    );
+    // A new parser is used because field auto-detection is captured on the
+    // first parse call.
+    const nestedFirstCsv = await parseInput(
+      new Parser(opts),
+      jsonFixtures.flattenConflictNestedFirst(),
+    );
+
+    expect(flatFirstCsv).toBe(csvFixtures.flattenedConflictDeterministic);
+    expect(nestedFirstCsv).toBe(csvFixtures.flattenedConflictDeterministic);
+  });
+
+  it('should let the deepest source path win flattened key collisions with onConflict "last"', async () => {
+    const parser = new Parser({
+      transforms: [flatten({ arrays: true, objects: true, onConflict: 'last' })],
+    });
+
+    const csv = await parseInput(
+      parser,
+      jsonFixtures.flattenConflictFlatFirst(),
+    );
+
+    expect(csv).toBe(csvFixtures.flattenedConflictLast);
+  });
+
+  it('should error on flattened key collisions with onConflict "error" and keep reporting all clashing source paths', async () => {
+    const parser = new Parser({
+      transforms: [flatten({ arrays: true, objects: true, onConflict: 'error' })],
+    });
+
+    await expect(
+      parseInput(parser, jsonFixtures.flattenConflictFlatFirst()),
+    ).rejects.toThrow(/Flatten conflict: "tags\.0".*"user\.id"/s);
+  });
+
+  it('should not alter non-conflicting flattened keys or their order', () => {
+    const parser = new Parser({
+      transforms: [flatten({ arrays: true, objects: true })],
+    });
+
+    const row = {
+      z: 1,
+      a: { b: 2 },
+      list: [{ c: 3 }],
+      tail: 'end',
+    };
+
+    expect(parser.parse([row])).toBe(
+      '"z","a.b","list.0.c","tail"\n1,2,3,"end"',
+    );
+  });
+
   it('should support multiple transforms and honor the order in which they are declared', async () => {
     const opts: ParserOptions = {
       transforms: [unwind({ paths: ['items'] }), flatten()],

@@ -23,7 +23,11 @@ import {
   type ParserOptions,
   type StreamParserOptions,
 } from '@json2csv/plainjs';
-import { flatten, unwind } from '@json2csv/transforms';
+import {
+  type FlattenConflictStrategy,
+  flatten,
+  unwind,
+} from '@json2csv/transforms';
 import { Command, type OptionValues } from 'commander';
 import parseNdJson from './utils/parseNdjson.js';
 import TablePrinter, {
@@ -46,6 +50,7 @@ type TransformsOptions = {
   flattenObjects: boolean;
   flattenArrays: boolean;
   flattenSeparator: string;
+  flattenOnConflict: FlattenConflictStrategy;
 } & { unwind: true | string; unwindBlank: boolean };
 
 type Options = {
@@ -150,6 +155,11 @@ program
     '--flatten-separator <separator>',
     "Flattened keys separator. Defaults to '.'.",
     '.',
+  )
+  .option(
+    '--flatten-on-conflict <strategy>',
+    "Strategy when two source paths flatten to the same key: 'first', 'last' or 'error'. Defaults to 'first'.",
+    'first',
   );
 
 program.parse(process.argv);
@@ -314,6 +324,7 @@ async function processStream<TRaw extends object, T extends object>(
           objects: config.flattenObjects,
           arrays: config.flattenArrays,
           separator: config.flattenSeparator,
+          onConflict: config.flattenOnConflict,
         }),
       );
     }

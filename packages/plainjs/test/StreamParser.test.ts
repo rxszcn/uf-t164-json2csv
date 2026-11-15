@@ -715,6 +715,39 @@ describe('Stream Parser', () => {
     expect(csv).toBe(csvFixtures.objectWithEmptyFieldsStream);
   });
 
+  it('should produce the same CSV for the same logical record regardless of key insertion order when flattening', async () => {
+    const opts: ParserOptions = {
+      transforms: [flatten({ arrays: true, objects: true })],
+    };
+
+    const flatFirstCsv = await parseInput(
+      new Parser(opts),
+      jsonFixtures.flattenConflictFlatFirst(),
+    );
+    const nestedFirstCsv = await parseInput(
+      new Parser(opts),
+      jsonFixtures.flattenConflictNestedFirst(),
+    );
+
+    expect(flatFirstCsv).toBe(csvFixtures.flattenedConflictDeterministic);
+    expect(nestedFirstCsv).toBe(csvFixtures.flattenedConflictDeterministic);
+  });
+
+  it('should support the flatten onConflict strategy', async () => {
+    const parser = new Parser({
+      transforms: [
+        flatten({ arrays: true, objects: true, onConflict: 'last' }),
+      ],
+    });
+
+    const csv = await parseInput(
+      parser,
+      jsonFixtures.flattenConflictFlatFirst(),
+    );
+
+    expect(csv).toBe(csvFixtures.flattenedConflictLast);
+  });
+
   it('should support multiple transforms and honor the order in which they are declared', async () => {
     const opts: ParserOptions = {
       transforms: [unwind({ paths: ['items'] }), flatten()],
